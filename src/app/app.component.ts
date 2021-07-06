@@ -2,7 +2,7 @@ import {AfterViewInit, Component, OnInit} from "@angular/core";
 import OlMap from "ol/Map";
 import TileLayer from "ol/layer/Tile";
 import OlView from "ol/View";
-import {Cluster, OSM} from "ol/source";
+import {Cluster, OSM, Stamen, TileWMS} from "ol/source";
 import {fromLonLat} from "ol/proj";
 // @ts-ignore
 import OLCesium from "ol-cesium";
@@ -30,7 +30,7 @@ export class AppComponent implements OnInit, AfterViewInit {
   map: OlMap = new OlMap({});
   view: OlView | undefined;
   title = "angular-openlayers";
-  currentResolution = undefined;
+  currentResolution: any = undefined;
   maxFeatureCount = 0;
   earthquakeFill = new Fill({
     color: "rgba(255, 153, 0, 0.8)",
@@ -108,10 +108,32 @@ export class AppComponent implements OnInit, AfterViewInit {
     source: this.countriesSource
   });
 
+  ecmwf = new TileLayer({
+    source: new TileWMS({
+      url: "http://localhost:8080/wms",
+      params: {layers: "ecmwf/sfc_temp", styles: "default/seq-Reds"},
+      crossOrigin: "anonymous"
+    })
+  });
+
+  routing = new TileLayer({
+    source: new TileWMS({
+      url: "http://localhost:8080/wms",
+      params: {layers: "routing/u10:v10-group", styles: "default/x-Rainbow"},
+      crossOrigin: "anonymous"
+    })
+  });
+
+  stamen = new TileLayer({
+    source: new Stamen({
+      layer: "terrain",
+    }),
+  });
+
   ngOnInit(): void {
     this.view = new OlView({
-      center: fromLonLat([4.4024643, 51.2194475]),
-      zoom: 4
+      center: fromLonLat([5.1085353, 52.0670368]),
+      zoom: 5
     });
   }
 
@@ -153,7 +175,7 @@ export class AppComponent implements OnInit, AfterViewInit {
     // });
     this.map = new OlMap({
       target: "map",
-      layers: [osmLayer, this.clusterData, this.airports, this.countries, this.populatedPlaces],
+      layers: [osmLayer, this.clusterData, this.airports, this.populatedPlaces, this.ecmwf, this.routing], //this.countries, this.ecmwf, this.routing, this.stamen,
       view: this.view
     });
 
@@ -224,6 +246,45 @@ export class AppComponent implements OnInit, AfterViewInit {
 
     this.addContextMenu();
 
+    document.getElementById("export-png").addEventListener("click", () => {
+      this.map.once("rendercomplete", () => {
+        const mapCanvas: any = document.createElement("canvas");
+        const size = this.map.getSize();
+        mapCanvas.width = size[0];
+        mapCanvas.height = size[1];
+        const mapContext = mapCanvas.getContext("2d");
+        Array.prototype.forEach.call(
+          document.querySelectorAll(".ol-layer canvas"),
+          canvas => {
+            if (canvas.width > 0) {
+              const opacity = canvas.parentNode.style.opacity;
+              mapContext.globalAlpha = opacity === "" ? 1 : Number(opacity);
+              const transform = canvas.style.transform;
+              // Get the transform parameters from the style's transform matrix
+              const matrix = transform
+                .match(/^matrix\(([^\(]*)\)$/)[1]
+                .split(",")
+                .map(Number);
+              // Apply the transform to the export map context
+              CanvasRenderingContext2D.prototype.setTransform.apply(
+                mapContext,
+                matrix
+              );
+              mapContext.drawImage(canvas, 0, 0);
+            }
+          }
+        );
+        if (navigator.msSaveBlob) {
+          // link download attribuute does not work on MS browsers
+          navigator.msSaveBlob(mapCanvas.msToBlob(), "map.png");
+        } else {
+          const link: any = document.getElementById("image-download");
+          link.href = mapCanvas.toDataURL();
+          link.click();
+        }
+      });
+      this.map.renderSync();
+    });
   }
 
   addContextMenu(): void {
